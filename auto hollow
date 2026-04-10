@@ -1,0 +1,207 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "hehe",
+    LoadingTitle = "Auto Hollow",
+    LoadingSubtitle = "by 4574674863869",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "HollowFarmConfig",
+        FileName = "AutoHollowFarm"
+    },
+    KeySystem = false,
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+
+local AutoFarmEnabled = false
+local AutoM1Enabled = false
+local HoverConnection = nil
+local M1Loop = nil
+
+local CurrentHoverHeight = 8
+local MaxRadius = 50
+local CurrentM1Speed = 0.12   -- Default M1 speed
+
+-- ==================== SAFE CRAWLER CHECK ====================
+local function isValidCrawler(obj)
+    if not obj or not obj:IsA("Model") then return false end
+    local hum = obj:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not obj:FindFirstChild("Left Arm") and not obj:FindFirstChild("LeftUpperArm") then
+        return false
+    end
+    return true
+end
+
+-- ==================== HOVER FUNCTION (Live Height) ====================
+local function startHovering(crawler)
+    if HoverConnection then HoverConnection:Disconnect() end
+    
+    HoverConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        if not AutoFarmEnabled or not crawler or not crawler.Parent then return end
+        if not isValidCrawler(crawler) then return end
+        
+        local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local pos = crawler:GetPivot().Position
+        
+        local hoverCFrame = CFrame.new(pos.X, pos.Y + CurrentHoverHeight, pos.Z)
+            * CFrame.Angles(math.rad(90), 0, 0)
+            * CFrame.Angles(0, math.rad(180), 0)
+        
+        root.CFrame = hoverCFrame
+    end)
+end
+
+-- ==================== AUTO M1 (Live Speed) ====================
+local function startAutoM1()
+    if M1Loop then M1Loop:Disconnect() M1Loop = nil end
+    AutoM1Enabled = true
+    
+    M1Loop = task.spawn(function()
+        while AutoM1Enabled do
+            local char = game.Players.LocalPlayer.Character
+            if char and char:FindFirstChild("CharacterHandler") then
+                local remotes = char.CharacterHandler:FindFirstChild("Remotes")
+                if remotes and remotes:FindFirstChild("LeftClick") then
+                    local isAir = char.Humanoid.FloorMaterial == Enum.Material.Air
+                    local mouse = game.Players.LocalPlayer:GetMouse()
+                    
+                    remotes.LeftClick:FireServer(
+                        isAir,
+                        mouse.Hit,
+                        false,
+                        nil,
+                        nil,
+                        { nil, nil },
+                        nil
+                    )
+                end
+            end
+            task.wait(CurrentM1Speed)
+        end
+    end)
+end
+
+local function stopAutoM1()
+    AutoM1Enabled = false
+    if M1Loop then
+        M1Loop:Disconnect()
+        M1Loop = nil
+    end
+end
+
+-- ==================== AUTO FARM TOGGLE ====================
+MainTab:CreateToggle({
+    Name = "Auto Hollow Farm",
+    CurrentValue = false,
+    Flag = "AutoHollowFarmToggle",
+    Callback = function(Value)
+        AutoFarmEnabled = Value
+        if HoverConnection then HoverConnection:Disconnect() HoverConnection = nil end
+        
+        if Value then
+            Rayfield:Notify({Title = "Auto Hollow Farm", Content = "Started", Duration = 3})
+            
+            task.spawn(function()
+                while AutoFarmEnabled do
+                    local myRoot = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if not myRoot then task.wait(1) continue end
+                    
+                    local aliveCrawlers = {}
+                    for _, obj in ipairs(workspace.Alive:GetChildren()) do
+                        if obj.Name:match("Crawler_difficulty") and isValidCrawler(obj) then
+                            local dist = (obj:GetPivot().Position - myRoot.Position).Magnitude
+                            if (#aliveCrawlers + 1 <= 3) or (dist <= MaxRadius) then
+                                table.insert(aliveCrawlers, obj)
+                            end
+                        end
+                    end
+                    
+                    if #aliveCrawlers > 0 then
+                        local switchTime = (#aliveCrawlers > 3) and 4 or 999999
+                        
+                        for _, crawler in ipairs(aliveCrawlers) do
+                            if not AutoFarmEnabled then break end
+                            
+                            startHovering(crawler)
+                            
+                            local startTime = tick()
+                            local hum = crawler:FindFirstChildOfClass("Humanoid")
+                            
+                            repeat
+                                task.wait(0.3)
+                                if #aliveCrawlers > 3 and (tick() - startTime) > switchTime then break end
+                            until not AutoFarmEnabled or not hum or hum.Health <= 0 or not isValidCrawler(crawler)
+                            
+                            if HoverConnection then HoverConnection:Disconnect() HoverConnection = nil end
+                            task.wait(0.6)
+                        end
+                    else
+                        task.wait(2)
+                    end
+                end
+                if HoverConnection then HoverConnection:Disconnect() HoverConnection = nil end
+            end)
+        else
+            Rayfield:Notify({Title = "Auto Hollow Farm", Content = "Stopped", Duration = 3})
+            if HoverConnection then HoverConnection:Disconnect() HoverConnection = nil end
+        end
+    end,
+})
+
+-- ==================== AUTO HOLLOW M1 TOGGLE ====================
+MainTab:CreateToggle({
+    Name = "Auto Hollow M1",
+    CurrentValue = false,
+    Flag = "AutoHollowM1Toggle",
+    Callback = function(Value)
+        if Value then
+            startAutoM1()
+            Rayfield:Notify({Title = "Auto Hollow M1", Content = "ENABLED", Duration = 3})
+        else
+            stopAutoM1()
+            Rayfield:Notify({Title = "Auto Hollow M1", Content = "DISABLED", Duration = 3})
+        end
+    end,
+})
+
+-- ==================== SLIDERS ====================
+MainTab:CreateSlider({
+    Name = "Hover Height (studs)",
+    Range = {3, 20},
+    Increment = 0.5,
+    CurrentValue = 8,
+    Flag = "HoverHeight",
+    Callback = function(Value)
+        CurrentHoverHeight = Value
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "M1 Attack Speed",
+    Range = {0.06, 0.25},
+    Increment = 0.01,
+    CurrentValue = 0.12,
+    Flag = "M1Speed",
+    Callback = function(Value)
+        CurrentM1Speed = Value
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "Max Radius when crowded (studs)",
+    Range = {20, 100},
+    Increment = 5,
+    CurrentValue = 50,
+    Flag = "RadiusSlider",
+    Callback = function(v) MaxRadius = v end,
+})
+
+Rayfield:Notify({
+    Title = "Script Fixed",
+    Content = "Hover Height + M1 Speed sliders now work live",
+    Duration = 6,
+})
